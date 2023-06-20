@@ -24,7 +24,7 @@
  *
  * Based on Source: Shenzhen Heli Technology Co., Ltd
 \*********************************************************************************************/
-
+#define FASTMEASSUREMENT true
 #define XNRG_01                 1
 
 // Energy model type 0 (GPIO_HLW_CF) - HLW8012 based (Sonoff Pow, KMC70011, HuaFan, AplicWDP303075)
@@ -38,7 +38,7 @@
 #define HJL_IREF             3300
 
 #define HLW_POWER_PROBE_TIME   10    // Number of seconds to probe for power before deciding none used (low power pulse can take up to 10 seconds)
-#define HLW_SAMPLE_COUNT       10    // Max number of samples per cycle
+#define HLW_SAMPLE_COUNT       100    // Max number of samples per cycle
 
 //#define HLW_DEBUG
 
@@ -52,7 +52,7 @@ struct HLW {
   volatile uint32_t cf_pulse_counter = 0;
   uint32_t cf_power_pulse_length  = 0;
 
-  volatile uint32_t cf1_pulse_length = 0;
+  volatile float cf1_pulse_length = 0;
   volatile uint32_t cf1_pulse_last_time = 0;
   volatile uint32_t cf1_summed_pulse_length = 0;
   volatile uint32_t cf1_pulse_counter = 0;
@@ -117,10 +117,10 @@ void HlwCf1Interrupt(void) {  // Service Voltage and Current
 /********************************************************************************************/
 
 void HlwEvery200ms(void) {
-  uint32_t cf1_pulse_length = 0;
+  float cf1_pulse_length = 0;
   uint32_t hlw_w = 0;
-  uint32_t hlw_u = 0;
-  uint32_t hlw_i = 0;
+  float hlw_u = 0;
+  float hlw_i = 0;
 
   if (micros() - Hlw.cf_pulse_last_time > (HLW_POWER_PROBE_TIME * 1000000)) {
     Hlw.cf_pulse_length = 0;    // No load for some time
@@ -149,7 +149,7 @@ void HlwEvery200ms(void) {
     Hlw.cf1_timer++;
     if (Hlw.cf1_timer >= 8) {
       Hlw.cf1_timer = 0;
-      Hlw.select_ui_flag = (Hlw.select_ui_flag) ? false : true;
+      if(~FASTMEASSUREMENT){Hlw.select_ui_flag = (Hlw.select_ui_flag) ? false : true;}
       DigitalWrite(GPIO_NRG_SEL, 0, Hlw.select_ui_flag);
 
       if (Hlw.cf1_pulse_counter) {
@@ -179,7 +179,7 @@ void HlwEvery200ms(void) {
         Hlw.cf1_voltage_pulse_length  = cf1_pulse_length;
 
         if (Hlw.cf1_voltage_pulse_length  && Energy->power_on) {     // If powered on always provide voltage
-          hlw_u = (Hlw.voltage_ratio * EnergyGetCalibration(ENERGY_VOLTAGE_CALIBRATION)) / Hlw.cf1_voltage_pulse_length ;  // V *10
+          hlw_u = (Hlw.voltage_ratio * EnergyGetCalibration(ENERGY_VOLTAGE_CALIBRATION)) * Hlw.cf1_pulse_counter / Hlw.cf1_summed_pulse_length;
           Energy->voltage[0] = (float)hlw_u / 10;
         } else {
           Energy->voltage[0] = 0;
@@ -317,7 +317,10 @@ bool Xnrg01(uint32_t function) {
 
   switch (function) {
     case FUNC_EVERY_200_MSECOND:
-      HlwEvery200ms();
+      if(~FASTMEASSUREMENT){HlwEvery200ms();}
+      break;
+    case FUNC_LOOP:
+      if(FASTMEASSUREMENT){HlwEvery200ms();}
       break;
     case FUNC_ENERGY_EVERY_SECOND:
       HlwEverySecond();
